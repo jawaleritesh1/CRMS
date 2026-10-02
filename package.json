@@ -1,0 +1,13 @@
+{
+  "name": "ralix-crm",
+  "version": "5.1.0",
+  "description": "Ralix CRM v5.1.0-HARDENED Monorepo",
+  "private": true,
+  "scripts": {
+    "server": "npm --prefix server run dev",
+    "client": "npm --prefix client run dev",
+    "test": "npm --prefix server run test",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix client run typecheck",
+    "build": "npm --prefix server run build && npm --prefix client run build"
+  }
+}

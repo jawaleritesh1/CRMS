@@ -1,0 +1,1689 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ======================================================================
+// ENUMS
+// ======================================================================
+
+enum ScopeType {
+  SELF
+  TEAM
+  PROJECT
+  ORGANIZATION
+  GLOBAL
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+// ---- Lead: five independent dimensions (§10.1) -----------------------
+
+/// Commercial journey position. Never encodes operational, temperature,
+/// SLA, disposition, site-visit or booking state.
+enum LeadLifecycleStage {
+  NEW
+  CONTACTED
+  QUALIFIED
+  SITE_VISIT
+  NEGOTIATION
+  BOOKING
+  WON
+  /// Converted, then cancelled. Reachable ONLY from WON, driven by
+  /// Booking.status = CANCELLED. Never merged with LOST (§10.3).
+  CANCELLED
+  LOST
+}
+
+/// Operational working condition. Never duplicates lifecycle values.
+enum LeadStatus {
+  ACTIVE
+  ON_HOLD
+  CALLBACK_PENDING
+  NO_RESPONSE
+  INVALID
+  DUPLICATE
+  /// No further operational work — set when lifecycle reaches WON, LOST, or CANCELLED (§10.2, §10.5).
+  CLOSED
+}
+
+/// Sales intent / engagement intensity. Never set by SLA automation.
+enum LeadTemperature {
+  COLD
+  WARM
+  HOT
+}
+
+/// Response-time compliance. Entirely independent of temperature.
+enum LeadSLAState {
+  WITHIN_SLA
+  DUE_SOON
+  BREACHED
+  RESOLVED
+}
+
+/// Reason behind the lead's current outcome. Not a lifecycle stage.
+enum LeadDisposition {
+  INTERESTED
+  NOT_INTERESTED
+  NO_RESPONSE
+  WRONG_NUMBER
+  INVALID_LEAD
+  DUPLICATE
+  BUDGET_ISSUE
+  LOCATION_ISSUE
+  PRODUCT_MISMATCH
+  COMPETITOR
+  FUTURE_REQUIREMENT
+  RENTAL_REQUIREMENT
+  INVESTMENT_REQUIREMENT
+  PURCHASED
+  LOST_TO_COMPETITOR
+  OTHER
+}
+
+enum LeadSourceType {
+  META
+  PORTAL
+  WEBSITE
+  WALK_IN
+  CHANNEL_PARTNER
+  REFERRAL
+  IMPORT
+}
+
+enum AssignmentReason {
+  MANUAL
+  AUTO_ROUND_ROBIN
+  SLA_FAILOVER
+  REDISTRIBUTION
+  TEAM_TRANSFER
+  BACKUP
+  MANAGER_REASSIGN
+  UNASSIGNED
+}
+
+enum ChangeSource {
+  MANUAL
+  AUTOMATION
+  SCORING_ENGINE
+  SLA_WORKER
+  IMPORT
+  WEBHOOK
+  SYSTEM
+}
+
+// ---- Inventory, booking, payment -------------------------------------
+
+enum UnitAvailability {
+  AVAILABLE
+  ON_HOLD
+  BLOCKED
+  BOOKING_IN_PROGRESS
+  BOOKED
+  SOLD
+}
+
+enum HoldStatus {
+  ACTIVE
+  RELEASED
+  EXPIRED
+  CONSUMED
+}
+
+enum SiteVisitStatus {
+  SCHEDULED
+  CONFIRMED
+  RESCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum CostSheetStatus {
+  DRAFT
+  ISSUED
+  APPROVED
+  SUPERSEDED
+  EXPIRED
+  CONSUMED
+}
+
+enum BookingStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum MilestoneStatus {
+  UPCOMING
+  DUE
+  INVOICED
+  PAID_PARTIAL
+  PAID_FULL
+  OVERDUE
+  /// The milestone is no longer collectible because its associated booking was
+  /// cancelled or the demand was formally invalidated (§16.2, §17.7).
+  VOIDED
+}
+
+enum PaymentType {
+  TOKEN
+  MILESTONE
+  REFUND
+  ADJUSTMENT
+}
+
+/// Decision B: there is NO REVERSED state. A refund is a new compensating
+/// Payment row linked by reversalOfPaymentId (§17.4), never a mutation of
+/// the settled original.
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  REFUND_PENDING
+  REFUNDED
+}
+
+// ---- Communication ---------------------------------------------------
+
+/// Technical call progress, provider-driven (§19.1).
+enum CallAttemptStatus {
+  INITIATED
+  RINGING
+  CONNECTED
+  COMPLETED
+  FAILED
+  NO_ANSWER
+  BUSY
+  CANCELLED
+}
+
+/// Business outcome of ONE call. Distinct from LeadDisposition.
+enum CallDisposition {
+  CONNECTED
+  NO_ANSWER
+  BUSY
+  CALLBACK_REQUESTED
+  INTERESTED
+  NOT_INTERESTED
+  WRONG_NUMBER
+  INVALID
+}
+
+enum TemplateStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  PAUSED
+  DISABLED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+/// Transport delivery fact. Never conflated with business response.
+enum MessageDeliveryStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+// ---- Attribution -----------------------------------------------------
+
+enum AttributionStatus {
+  ACTIVE
+  EXPIRED
+  TRANSFERRED
+  REVOKED
+}
+
+enum PayoutStatus {
+  PENDING
+  APPROVED
+  PAID
+  REJECTED
+}
+
+// ---- Infrastructure --------------------------------------------------
+
+enum WebhookProvider {
+  META_LEAD_ADS
+  WHATSAPP
+  EXOTEL
+  KNOWLARITY
+  PAYMENT_GATEWAY
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+  DEAD_LETTER
+}
+
+/// Closed registry of domain events (§22.1). Adding an event type is an
+/// architectural change, not an ad-hoc string literal.
+enum DomainEventType {
+  LeadCreated
+  LeadAssigned
+  LeadReassigned
+  LeadStageChanged
+  LeadStatusChanged
+  LeadTemperatureChanged
+  LeadDispositionChanged
+  LeadScoreChanged
+  LeadSLABreached
+  LeadSLAResolved
+  DuplicateDetected
+  DuplicateResolved
+  SiteVisitScheduled
+  SiteVisitConfirmed
+  SiteVisitCompleted
+  SiteVisitCancelled
+  SiteVisitNoShow
+  UnitHeld
+  UnitHoldExpired
+  UnitHoldReleased
+  UnitBookingStarted
+  UnitBooked
+  UnitSold
+  UnitBlocked
+  UnitReleased
+  CostSheetGenerated
+  CostSheetApproved
+  BookingCreated
+  BookingConfirmed
+  BookingCancelled
+  ConstructionStageAdvanced
+  PaymentCreated
+  PaymentReceived
+  PaymentFailed
+  PaymentRefunded
+  MilestoneDue
+  DemandNoticeIssued
+  ChannelPartnerAttributed
+  AttributionExpired
+  AttributionTransferred
+  CommissionGenerated
+  RolePermissionsChanged
+  MembershipSuspended
+  SessionRevoked
+}
+
+enum OutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+enum DuplicateMatchType {
+  NORMALIZED_PHONE
+  NORMALIZED_EMAIL
+  NAME_SIMILARITY
+  EXTERNAL_LEAD_ID
+  COMPOSITE
+}
+
+enum DuplicateStatus {
+  PENDING
+  CONFIRMED
+  DISMISSED
+}
+
+enum ActivityActionType {
+  LEAD_CREATED
+  AUTO_ASSIGNED
+  REASSIGNED
+  STAGE_CHANGED
+  STATUS_CHANGED
+  TEMPERATURE_CHANGED
+  DISPOSITION_CHANGED
+  SCORE_CHANGED
+  SLA_BREACHED
+  SLA_RESOLVED
+  DUPLICATE_DETECTED
+  DUPLICATE_RESOLVED
+  CALL_MADE
+  CALL_MISSED
+  WHATSAPP_SENT
+  WHATSAPP_RECEIVED
+  NOTE_ADDED
+  VISIT_SCHEDULED
+  VISIT_COMPLETED
+  UNIT_HOLD_PLACED
+  UNIT_HOLD_RELEASED
+  COST_SHEET_GENERATED
+  BOOKING_CREATED
+  PAYMENT_RECEIVED
+}
+
+// ======================================================================
+// 1. TENANT CORE
+// ======================================================================
+
+model Organization {
+  id         String   @id @default(cuid())
+  name       String
+  slug       String   @unique
+  logoUrl    String?
+  phone      String?
+  email      String?
+  address    String?
+  city       String?
+  reraNumber String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  settings    OrganizationSetting?
+  memberships OrganizationMembership[]
+  roles       Role[]
+  teams       Team[]
+  projects    Project[]
+  customers   Customer[]
+  leads       Lead[]
+  // … all other tenant-owned relations
+  Campaign    Campaign[]
+  Booking     Booking[]
+  AuditLog    AuditLog[]
+
+  @@index([slug])
+  @@index([isActive])
+}
+
+model OrganizationSetting {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // SLA & distribution
+  slaEscalationSeconds  Int    @default(120)
+  slaDueSoonSeconds     Int    @default(90)
+  distributionStrategy  String @default("ROUND_ROBIN")
+  maxLeadsPerUserPerDay Int?
+
+  // PII policy — baseline; capability must ALSO permit (§31.4)
+  maskCustomerPhoneForCSE Boolean @default(true)
+
+  // Identity / matching
+  defaultPhoneRegion String? // null => bare numbers flagged, not guessed (§9.3)
+
+  // Commercial defaults
+  unitHoldMaxHours        Int     @default(24)
+  defaultGstPercent       Decimal @default(5.00) @db.Decimal(5, 2)
+  defaultStampDutyPercent Decimal @default(6.00) @db.Decimal(5, 2)
+
+  // Attribution
+  cpAttributionWindowDays Int @default(60)
+
+  // Provider credentials are stored as SECRET MANAGER REFERENCES only (§31.6).
+  metaCredentialRef      String?
+  whatsAppCredentialRef  String?
+  telephonyCredentialRef String?
+  paymentCredentialRef   String?
+  telephonyProvider      String  @default("EXOTEL")
+
+  version   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ======================================================================
+// 2. IDENTITY, MEMBERSHIP & RBAC   (ADR-011: Proposed)
+// ======================================================================
+
+/// Global identity. Tenant-specific attributes live on OrganizationMembership.
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String?
+  name         String
+  phone        String?
+  avatar       String?
+  mfaEnabled   Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships OrganizationMembership[]
+  sessions    Session[]
+}
+
+model OrganizationMembership {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId         String
+  role           Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  jobTitle    String           @default("Sales Executive") // descriptive only — never authorization
+  status      MembershipStatus @default(ACTIVE)
+  isAvailable Boolean          @default(true) // lead-distribution eligibility
+
+  /// Incremented on any role/permission/scope/status change (§6.6).
+  authorizationVersion Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions        Session[]
+  teamMemberships TeamMember[]
+  userProjects    UserProject[]
+  assignedLeads   Lead[]        @relation("LeadOwner")
+
+  @@unique([organizationId, userId])
+  @@unique([id, userId, organizationId]) // composite-FK target for Session (§5.8, §6.3)
+  @@unique([id, organizationId]) // composite-FK target for Lead ownership (§5.6)
+  @@index([organizationId, status])
+  @@index([organizationId, isAvailable])
+}
+
+/// Authoritative server-side session. The access token is a short-lived
+/// cache of this row (§6.4).
+model Session {
+  id             String                 @id @default(cuid())
+  organizationId String
+  userId         String
+  user           User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  membershipId   String
+  membership     OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  authorizationVersion Int
+  refreshTokenFamilyId String
+  deviceLabel          String?
+  ipAddress            String?
+  userAgent            String?
+
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  @@index([organizationId, userId])
+  @@index([expiresAt])
+  @@index([refreshTokenFamilyId])
+}
+
+/// Dual-mode authorization entity (§5.3, §7.8):
+/// - Tenant role: organizationId != null, isSystem = false (organization-level authorization)
+/// - Platform system role: organizationId = null, isSystem = true, scope = GLOBAL (platform-only)
+model Role {
+  id             String        @id @default(cuid())
+  organizationId String? // null => platform system role (GLOBAL scope, isSystem = true only)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  slug           String
+  description    String?
+  scope          ScopeType     @default(SELF)
+  isSystem       Boolean       @default(false)
+  isActive       Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  memberships OrganizationMembership[]
+  permissions RolePermission[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, isActive])
+}
+
+/// Global capability catalogue — Class G, not tenant-owned (§5.2).
+model Permission {
+  id          String   @id @default(cuid())
+  key         String   @unique // LEAD_ASSIGN, PAYMENT_REFUND, CUSTOMER_VIEW_UNMASKED
+  resource    String
+  action      String
+  description String?
+  createdAt   DateTime @default(now())
+
+  roles RolePermission[]
+
+  @@index([resource])
+}
+
+/// Class B — tenancy inherited from Role (§5.4).
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model Team {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  managerId      String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  members      TeamMember[]
+  teamProjects TeamProject[]
+  leads        Lead[]
+
+  @@index([organizationId, isActive])
+}
+
+/// Class B — tenancy inherited from Team.
+model TeamMember {
+  id           String                 @id @default(cuid())
+  teamId       String
+  team         Team                   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  membershipId String
+  membership   OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  teamRole     String                 @default("MEMBER") // LEADER | MEMBER | BACKUP
+  isActive     Boolean                @default(true)
+  joinedAt     DateTime               @default(now())
+  leftAt       DateTime?
+
+  @@unique([teamId, membershipId])
+  @@index([membershipId, isActive])
+}
+
+/// Class B. Team and Project must belong to the same organization (§5.6).
+model TeamProject {
+  id        String   @id @default(cuid())
+  teamId    String
+  projectId String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([teamId, projectId])
+  @@index([projectId])
+}
+
+/// Class B. Membership and Project must belong to the same organization.
+model UserProject {
+  id           String                 @id @default(cuid())
+  membershipId String
+  projectId    String
+  membership   OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  project      Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt    DateTime               @default(now())
+
+  @@unique([membershipId, projectId])
+  @@index([projectId])
+}
+
+// ======================================================================
+// 3. PROPERTY & INVENTORY
+// ======================================================================
+
+model Project {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name             String
+  slug             String
+  builderName      String
+  location         String
+  city             String
+  reraRegistration String?
+  minPrice         Decimal?     @db.Decimal(14, 2)
+  maxPrice         Decimal?     @db.Decimal(14, 2)
+  brochureRef      String? // object storage reference, not a public URL (§30)
+  googleMapsUrl    String?
+  isActive         Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  towers          Tower[]
+  units           PropertyUnit[]
+  leads           Lead[]
+  campaigns       Campaign[]
+  siteVisits      SiteVisit[]
+  teamProjects    TeamProject[]
+  userProjects    UserProject[]
+  pricingRuleSets PricingRuleSet[]
+
+  @@unique([organizationId, slug])
+  @@unique([id, organizationId]) // composite-FK target (§5.5)
+  @@index([organizationId, isActive])
+}
+
+/// Class A — explicit organizationId despite being reachable via Project (§5.3).
+model Tower {
+  id                String   @id @default(cuid())
+  organizationId    String
+  projectId         String
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name              String
+  totalFloors       Int      @default(1)
+  constructionStage String   @default("Plinth Work")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  units PropertyUnit[]
+
+  @@unique([id, organizationId])
+  @@index([organizationId, projectId])
+}
+
+model PropertyUnit {
+  id             String  @id @default(cuid())
+  organizationId String
+  projectId      String
+  project        Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  towerId        String
+  tower          Tower   @relation(fields: [towerId], references: [id], onDelete: Cascade)
+
+  unitNumber     String
+  floorNumber    Int
+  configuration  String // "2 BHK", "3 BHK Luxury"
+  facing         String
+  carpetAreaSqFt Decimal  @db.Decimal(10, 2)
+  superAreaSqFt  Decimal? @db.Decimal(10, 2)
+  basePrice      Decimal  @db.Decimal(14, 2)
+  plcAmount      Decimal  @default(0) @db.Decimal(14, 2)
+
+  /// AUTHORITATIVE inventory state (§8.1). No other domain may assert it.
+  availability UnitAvailability @default(AVAILABLE)
+
+  /// Optimistic concurrency guard (§36.1).
+  version Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  holds      InventoryHold[]
+  bookings   Booking[]
+  costSheets CostSheet[]
+
+  @@unique([towerId, unitNumber])
+  @@unique([id, organizationId])
+  @@index([organizationId, availability])
+  @@index([organizationId, projectId, availability])
+}
+
+/// First-class hold entity (§14.2).
+///
+/// REQUIRES RAW SQL MIGRATION — Prisma cannot express partial unique indexes:
+///   CREATE UNIQUE INDEX inventory_hold_one_active_per_unit
+///     ON "InventoryHold" ("unitId") WHERE status = 'ACTIVE';
+/// This index is what makes Invariant #6 structurally impossible to violate.
+model InventoryHold {
+  id             String       @id @default(cuid())
+  organizationId String
+  unitId         String
+  unit           PropertyUnit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  leadId         String?
+  heldByUserId   String
+
+  status     HoldStatus @default(ACTIVE)
+  reason     String?
+  heldAt     DateTime   @default(now())
+  expiresAt  DateTime
+  releasedAt DateTime?
+
+  version   Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, unitId, status])
+  @@index([status, expiresAt]) // expiry sweep (§14.6)
+}
+
+// ======================================================================
+// 4. CUSTOMER & MARKETING ATTRIBUTION
+// ======================================================================
+
+model Customer {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name            String
+  phone           String // raw, as captured — never overwritten
+  normalizedPhone String // E.164 matching key (§9.3)
+  email           String?
+  normalizedEmail String?
+  city            String?
+
+  deletedAt DateTime? // soft delete (§34.4)
+  version   Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  leads         Lead[]
+  bookings      Booking[]
+  conversations Conversation[]
+  attributions  LeadAttribution[]
+
+  /// Matching is ALWAYS organization-scoped (§9.4).
+  @@unique([organizationId, normalizedPhone])
+  @@unique([id, organizationId])
+  @@index([organizationId, normalizedEmail])
+  @@index([organizationId, name])
+}
+
+/// How the lead arrived — distinct from which campaign paid for it (§10.9).
+model LeadSource {
+  id             String         @id @default(cuid())
+  organizationId String
+  type           LeadSourceType
+  provider       String? // FACEBOOK | INSTAGRAM | HOUSING | ...
+  name           String
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+
+  leads Lead[]
+
+  @@index([organizationId, type])
+}
+
+model Campaign {
+  id                 String       @id @default(cuid())
+  organizationId     String
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name               String
+  platform           String       @default("Meta Ads")
+  externalCampaignId String?
+  projectId          String?
+  project            Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  budget             Decimal?     @db.Decimal(12, 2)
+  isActive           Boolean      @default(true)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  leads Lead[]
+
+  @@index([organizationId, isActive])
+}
+
+// ======================================================================
+// 5. LEAD  (ADR-003)
+// ======================================================================
+
+model Lead {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  projectId  String?
+  project    Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  // ---- Current ownership (history lives in LeadAssignment) ----
+  assignedToId String?
+  assignedTo   OrganizationMembership? @relation("LeadOwner", fields: [assignedToId], references: [id], onDelete: SetNull)
+  teamId       String?
+  team         Team?                   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  // ---- Attribution (source ≠ campaign, §10.9) ----
+  sourceId         String?
+  source           LeadSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  campaignId       String?
+  campaign         Campaign?   @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  channelPartnerId String?
+  externalLeadId   String? // provider's record id — ingestion idempotency
+  adReference      String?
+  formReference    String?
+
+  // ---- THE FIVE INDEPENDENT DIMENSIONS (§10.1) ----
+  /// Commercial journey position only.
+  lifecycleStage LeadLifecycleStage @default(NEW)
+  /// Operational condition only.
+  status         LeadStatus         @default(ACTIVE)
+  /// Engagement intensity only. Never written by SLA automation.
+  temperature    LeadTemperature    @default(WARM)
+  /// Response-time compliance only. Never written by temperature logic.
+  slaState       LeadSLAState       @default(WITHIN_SLA)
+  /// Outcome reason only. Never a lifecycle stage.
+  disposition    LeadDisposition?
+
+  // ---- Scoring (current value; history in LeadScoreHistory) ----
+  score Int @default(50)
+
+  // ---- Commercial requirement ----
+  budgetMin       Decimal? @db.Decimal(14, 2)
+  budgetMax       Decimal? @db.Decimal(14, 2)
+  preferredConfig String?
+
+  // ---- SLA timestamps. slaBreachedAt is NEVER cleared (§11.5) ----
+  slaDueAt      DateTime?
+  slaBreachedAt DateTime?
+
+  // ---- DERIVED convenience fields (§8.3) — never decision inputs ----
+  lastContactedAt       DateTime?
+  nextFollowUpAt        DateTime?
+  hasCompletedSiteVisit Boolean   @default(false)
+
+  deletedAt      DateTime?
+  version        Int       @default(0)
+  /// Commercial cycle index (§10.3, §33.3). Starts at 1; incremented on LOST → NEW.
+  lifecycleCycle Int       @default(1)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // ---- History (structured reporting sources) ----
+  assignments         LeadAssignment[]
+  stageHistory        LeadStageHistory[]
+  statusHistory       LeadStatusHistory[]
+  temperatureHistory  LeadTemperatureHistory[]
+  scoreHistory        LeadScoreHistory[]
+  dispositionHistory  LeadDispositionHistory[]
+  duplicateCandidates DuplicateCandidate[]     @relation("DuplicateOfLead")
+  duplicateMatches    DuplicateCandidate[]     @relation("DuplicateMatchedLead")
+
+  // ---- Related domains (each authoritative for its own state) ----
+  activities       ActivityTimeline[]
+  notes            Note[]
+  followUps        FollowUp[]
+  callAttempts     CallAttempt[]
+  callRecords      CallRecord[]
+  whatsAppMessages WhatsAppMessage[]
+  siteVisits       SiteVisit[]
+  costSheets       CostSheet[]
+  bookings         Booking[]
+  tasks            Task[]
+  attribution      LeadAttribution[]
+
+  @@unique([id, organizationId])
+  /// Ingestion idempotency — a retried provider delivery cannot create a 2nd lead.
+  @@unique([organizationId, sourceId, externalLeadId])
+  // Each dimension independently queryable (§33.3, §34.3)
+  @@index([organizationId, lifecycleStage])
+  @@index([organizationId, status])
+  @@index([organizationId, temperature])
+  @@index([organizationId, slaState])
+  @@index([organizationId, disposition])
+  @@index([organizationId, assignedToId])
+  @@index([organizationId, teamId])
+  @@index([organizationId, projectId])
+  @@index([organizationId, campaignId])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, nextFollowUpAt])
+}
+
+/// Ownership history (§11.1).
+///
+/// REQUIRES RAW SQL MIGRATION:
+///   CREATE UNIQUE INDEX lead_assignment_one_open_per_lead
+///     ON "LeadAssignment" ("leadId") WHERE "releasedAt" IS NULL;
+model LeadAssignment {
+  id             String @id @default(cuid())
+  organizationId String
+  leadId         String
+  lead           Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  fromUserId String?
+  toUserId   String?
+  fromTeamId String?
+  toTeamId   String?
+
+  assignedById String? // null => system actor
+  reason       AssignmentReason @default(MANUAL)
+  source       ChangeSource     @default(MANUAL)
+  metadata     Json?
+
+  assignedAt DateTime  @default(now())
+  releasedAt DateTime? // null => currently open assignment
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, leadId, assignedAt])
+  @@index([organizationId, toUserId])
+  @@index([organizationId, toTeamId])
+}
+
+model LeadStageHistory {
+  id             String @id @default(cuid())
+  organizationId String
+  leadId         String
+  lead           Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  /// Commercial cycle index (§10.3, §33.3). Partitions history across re-engagements.
+  cycle          Int    @default(1)
+
+  fromStage   LeadLifecycleStage?
+  toStage     LeadLifecycleStage
+  changedById String?
+  reason      String?
+  source      ChangeSource        @default(MANUAL)
+  metadata    Json? // e.g. re-engagement context for LOST → NEW
+  createdAt   DateTime            @default(now())
+
+  /// Funnel reporting reads THIS, not current state (§33.3).
+  @@index([organizationId, leadId, createdAt])
+  @@index([organizationId, leadId, cycle])
+  @@index([organizationId, toStage, createdAt])
+}
+
+model LeadStatusHistory {
+  id             String       @id @default(cuid())
+  organizationId String
+  leadId         String
+  lead           Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  fromStatus     LeadStatus?
+  toStatus       LeadStatus
+  changedById    String?
+  reason         String?
+  source         ChangeSource @default(MANUAL)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, leadId, createdAt])
+}
+
+model LeadTemperatureHistory {
+  id              String           @id @default(cuid())
+  organizationId  String
+  leadId          String
+  lead            Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  fromTemperature LeadTemperature?
+  toTemperature   LeadTemperature
+  changedById     String?
+  reason          String?
+  source          ChangeSource     @default(MANUAL)
+  createdAt       DateTime         @default(now())
+
+  @@index([organizationId, leadId, createdAt])
+}
+
+model LeadScoreHistory {
+  id             String       @id @default(cuid())
+  organizationId String
+  leadId         String
+  lead           Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  previousScore  Int?
+  score          Int
+  reason         String?
+  source         ChangeSource @default(SCORING_ENGINE)
+  metadata       Json? // factor breakdown — makes a score explainable
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, leadId, createdAt])
+}
+
+model LeadDispositionHistory {
+  id              String           @id @default(cuid())
+  organizationId  String
+  leadId          String
+  lead            Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  fromDisposition LeadDisposition?
+  toDisposition   LeadDisposition
+  changedById     String?
+  reason          String?
+  source          ChangeSource     @default(MANUAL)
+  createdAt       DateTime         @default(now())
+
+  @@index([organizationId, leadId, createdAt])
+}
+
+/// Duplicates are a RELATIONSHIP, never a deletion (§10.8).
+model DuplicateCandidate {
+  id             String @id @default(cuid())
+  organizationId String
+  leadId         String
+  lead           Lead   @relation("DuplicateOfLead", fields: [leadId], references: [id], onDelete: Cascade)
+  matchedLeadId  String
+  matchedLead    Lead   @relation("DuplicateMatchedLead", fields: [matchedLeadId], references: [id], onDelete: Cascade)
+
+  matchType    DuplicateMatchType
+  confidence   Float?
+  status       DuplicateStatus    @default(PENDING)
+  reviewedById String?
+  reviewedAt   DateTime?
+  metadata     Json? // signal breakdown for explainability
+  createdAt    DateTime           @default(now())
+
+  @@unique([organizationId, leadId, matchedLeadId])
+  @@index([organizationId, status])
+  @@index([organizationId, matchedLeadId])
+}
+
+// ======================================================================
+// 6. SITE VISITS, FOLLOW-UPS, NOTES, TASKS
+// ======================================================================
+
+/// AUTHORITATIVE for site-visit state. Lead.lifecycleStage never replaces it (§12).
+model SiteVisit {
+  id             String  @id @default(cuid())
+  organizationId String
+  leadId         String
+  lead           Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  assignedToId   String
+
+  status            SiteVisitStatus @default(SCHEDULED)
+  scheduledAt       DateTime
+  completedAt       DateTime?
+  feedback          String?
+  rating            Int?
+  rescheduledFromId String?
+
+  version   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, leadId])
+  @@index([organizationId, status, scheduledAt])
+  @@index([organizationId, projectId, scheduledAt])
+}
+
+/// AUTHORITATIVE for scheduled callbacks. Lead.nextFollowUpAt is derived (§10.6).
+model FollowUp {
+  id             String    @id @default(cuid())
+  organizationId String
+  leadId         String
+  lead           Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  assignedToId   String
+  type           String    @default("CALL")
+  status         String    @default("PENDING") // PENDING | COMPLETED | MISSED | CANCELLED
+  scheduledAt    DateTime
+  completedAt    DateTime?
+  notes          String?
+  createdAt      DateTime  @default(now())
+
+  @@index([organizationId, assignedToId, scheduledAt])
+  @@index([organizationId, leadId])
+  @@index([organizationId, status, scheduledAt])
+}
+
+model Note {
+  id             String   @id @default(cuid())
+  organizationId String
+  leadId         String
+  lead           Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  authorId       String
+  content        String   @db.Text
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, leadId, createdAt])
+}
+
+model Task {
+  id             String    @id @default(cuid())
+  organizationId String
+  assignedToId   String
+  leadId         String?
+  lead           Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  title          String
+  dueDate        DateTime?
+  isCompleted    Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+
+  @@index([organizationId, assignedToId, isCompleted])
+}
+
+// ======================================================================
+// 7. COMMUNICATION
+// ======================================================================
+
+/// Technical call progress — separate from business outcome (§19.1).
+model CallAttempt {
+  id             String @id @default(cuid())
+  organizationId String
+  leadId         String
+  lead           Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId         String
+
+  status               CallAttemptStatus @default(INITIATED)
+  providerCallId       String?
+  maskedCustomerNumber String?
+  agentExtension       String?
+  initiatedAt          DateTime          @default(now())
+  connectedAt          DateTime?
+  endedAt              DateTime?
+
+  callRecord CallRecord?
+
+  @@unique([organizationId, providerCallId])
+  @@index([organizationId, leadId, initiatedAt])
+  @@index([organizationId, userId, initiatedAt])
+}
+
+/// Business record of one call. CallDisposition ≠ LeadDisposition.
+model CallRecord {
+  id             String      @id @default(cuid())
+  organizationId String
+  callAttemptId  String      @unique
+  callAttempt    CallAttempt @relation(fields: [callAttemptId], references: [id], onDelete: Cascade)
+  leadId         String
+  lead           Lead        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId         String
+
+  durationSeconds Int              @default(0)
+  recordingRef    String? // private storage ref; signed URL on demand (§30)
+  disposition     CallDisposition?
+  notes           String?
+  createdAt       DateTime         @default(now())
+
+  @@index([organizationId, leadId, createdAt])
+  @@index([organizationId, userId, createdAt])
+  @@index([organizationId, disposition])
+}
+
+model Conversation {
+  id                     String    @id @default(cuid())
+  organizationId         String
+  customerId             String
+  customer               Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  channel                String    @default("WHATSAPP")
+  lastInboundAt          DateTime?
+  lastOutboundAt         DateTime?
+  serviceWindowExpiresAt DateTime?
+  createdAt              DateTime  @default(now())
+
+  messages WhatsAppMessage[]
+
+  @@unique([organizationId, customerId, channel])
+  @@index([organizationId, lastInboundAt])
+}
+
+/// Provider-approved template. Approval state is MIRRORED from Meta via
+/// webhook — the CRM never self-approves (§19.2).
+model WhatsAppTemplate {
+  id                 String         @id @default(cuid())
+  organizationId     String
+  providerTemplateId String?
+  name               String
+  language           String         @default("en")
+  category           String // MARKETING | UTILITY | AUTHENTICATION
+  status             TemplateStatus @default(DRAFT)
+  /// Ordered, typed placeholder definition; validated at send time.
+  parameterSchema    Json?
+  body               String         @db.Text
+  rejectionReason    String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  messages WhatsAppMessage[]
+
+  @@unique([organizationId, name, language])
+  @@unique([organizationId, providerTemplateId])
+  @@index([organizationId, status])
+}
+
+model WhatsAppMessage {
+  id             String       @id @default(cuid())
+  organizationId String
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  leadId         String?
+  lead           Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  direction          MessageDirection
+  templateId         String?
+  template           WhatsAppTemplate? @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  templateParameters Json?
+  providerMessageId  String? // idempotency + status correlation
+  content            String            @db.Text
+  mediaRef           String?
+
+  /// Transport fact only — never a business response (§19.2).
+  deliveryStatus MessageDeliveryStatus @default(QUEUED)
+  failureReason  String?
+  sentAt         DateTime              @default(now())
+  deliveredAt    DateTime?
+  readAt         DateTime?
+
+  @@unique([organizationId, providerMessageId])
+  @@index([organizationId, conversationId, sentAt])
+  @@index([organizationId, leadId])
+}
+
+// ======================================================================
+// 8. PRICING, COST SHEETS, BOOKINGS, PAYMENTS
+// ======================================================================
+
+model PricingRuleSet {
+  id             String   @id @default(cuid())
+  organizationId String
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name           String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  versions PricingRuleVersion[]
+
+  @@index([organizationId, projectId, isActive])
+}
+
+/// Versioned so historical bookings stay explainable after a price revision (§15.3).
+model PricingRuleVersion {
+  id               String         @id @default(cuid())
+  organizationId   String
+  pricingRuleSetId String
+  pricingRuleSet   PricingRuleSet @relation(fields: [pricingRuleSetId], references: [id], onDelete: Cascade)
+  version          Int
+  rules            Json // base rate, floor rise, PLC, parking, tax config
+  effectiveFrom    DateTime
+  effectiveTo      DateTime?
+  createdById      String?
+  createdAt        DateTime       @default(now())
+
+  costSheets CostSheet[]
+
+  @@unique([pricingRuleSetId, version])
+  @@index([organizationId, effectiveFrom])
+}
+
+/// A versioned commercial document. ISSUED sheets are immutable (§15.3).
+model CostSheet {
+  id                   String              @id @default(cuid())
+  organizationId       String
+  leadId               String
+  lead                 Lead                @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  unitId               String
+  unit                 PropertyUnit        @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  pricingRuleVersionId String?
+  pricingRuleVersion   PricingRuleVersion? @relation(fields: [pricingRuleVersionId], references: [id], onDelete: SetNull)
+
+  version Int             @default(1)
+  status  CostSheetStatus @default(DRAFT)
+
+  // Full component breakdown — not just a total
+  basePrice          Decimal @db.Decimal(14, 2)
+  floorRiseAmount    Decimal @default(0) @db.Decimal(14, 2)
+  plcAmount          Decimal @default(0) @db.Decimal(14, 2)
+  parkingAmount      Decimal @default(0) @db.Decimal(14, 2)
+  amenitiesAmount    Decimal @default(0) @db.Decimal(14, 2)
+  discountApplied    Decimal @default(0) @db.Decimal(14, 2)
+  agreementValue     Decimal @db.Decimal(14, 2)
+  gstAmount          Decimal @db.Decimal(14, 2)
+  stampDutyAmount    Decimal @db.Decimal(14, 2)
+  registrationAmount Decimal @default(0) @db.Decimal(14, 2)
+  otherCharges       Decimal @default(0) @db.Decimal(14, 2)
+  totalAllInclusive  Decimal @db.Decimal(14, 2)
+
+  pdfRef        String? // private storage reference
+  generatedById String?
+  generatedAt   DateTime  @default(now())
+  approvedById  String? // required when discount exceeds role cap
+  approvedAt    DateTime?
+
+  supersededById String?
+  version_       Int      @default(0) @map("concurrency_version")
+  createdAt      DateTime @default(now())
+
+  bookings Booking[]
+
+  @@unique([organizationId, leadId, unitId, version])
+  @@index([organizationId, leadId])
+  @@index([organizationId, status])
+}
+
+model Booking {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leadId           String
+  lead             Lead         @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  customerId       String
+  customer         Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  unitId           String
+  unit             PropertyUnit @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  channelPartnerId String?
+
+  /// Exact commercial version the deal was struck on (§15.3, §16.1).
+  costSheetId      String
+  costSheet        CostSheet @relation(fields: [costSheetId], references: [id], onDelete: Restrict)
+  costSheetVersion Int
+  /// Immutable snapshot — survives any later pricing change.
+  costSnapshot     Json
+
+  status              BookingStatus @default(DRAFT)
+  totalAgreementValue Decimal       @db.Decimal(14, 2)
+  bookingDate         DateTime      @default(now())
+  confirmedAt         DateTime?
+  cancelledAt         DateTime?
+  cancellationReason  String?
+
+  version   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  statusHistory     BookingStatusHistory[]
+  milestones        PaymentMilestone[]
+  payments          Payment[]
+  commissionPayouts CommissionPayout[]
+
+  @@unique([id, organizationId]) // composite-FK target for Payment (§5.6)
+  @@index([organizationId, status])
+  @@index([organizationId, unitId])
+  @@index([organizationId, customerId])
+  @@index([organizationId, bookingDate])
+}
+
+model BookingStatusHistory {
+  id             String         @id @default(cuid())
+  organizationId String
+  bookingId      String
+  booking        Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  fromStatus     BookingStatus?
+  toStatus       BookingStatus
+  changedById    String?
+  reason         String?
+  createdAt      DateTime       @default(now())
+
+  @@index([organizationId, bookingId, createdAt])
+}
+
+/// What is OWED (the plan). Aggregates are derived from Payment (§17.1).
+model PaymentMilestone {
+  id             String          @id @default(cuid())
+  organizationId String
+  bookingId      String
+  booking        Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  sequence       Int
+  name           String // "10th Slab Completion"
+  percentage     Decimal         @db.Decimal(5, 2)
+  amountDue      Decimal         @db.Decimal(14, 2)
+  amountPaid     Decimal         @default(0) @db.Decimal(14, 2) // DERIVED
+  dueDate        DateTime
+  status         MilestoneStatus @default(UPCOMING)
+  invoiceNumber  String?
+  triggerEventId String? // idempotency for demand generation (§16.3)
+  createdAt      DateTime        @default(now())
+
+  payments Payment[]
+
+  @@unique([bookingId, sequence])
+  @@index([organizationId, status, dueDate])
+}
+
+/// What ACTUALLY MOVED. Append-only — never edited or deleted (§17.2).
+model Payment {
+  id             String            @id @default(cuid())
+  organizationId String
+  bookingId      String
+  booking        Booking           @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  milestoneId    String?
+  milestone      PaymentMilestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+
+  type        PaymentType   @default(MILESTONE)
+  /// Always positive. Direction is expressed by `type`, never by sign (§17.4).
+  amount      Decimal       @db.Decimal(14, 2) // CHECK (amount > 0)
+  paymentMode String        @default("BANK_TRANSFER")
+  status      PaymentStatus @default(PENDING)
+
+  provider               String?
+  providerTransactionRef String?
+  /// Reserved BEFORE the provider is called, so a charge can never exist
+  /// without a local row to reconcile against (§17.6).
+  idempotencyKey         String?
+
+  /// Set on a REFUND/ADJUSTMENT row, pointing at the original it compensates.
+  /// The original is never mutated into a reversal (§17.4).
+  reversalOfPaymentId String?
+  reversalOf          Payment?  @relation("PaymentCompensation", fields: [reversalOfPaymentId], references: [id], onDelete: Restrict)
+  compensatedBy       Payment[] @relation("PaymentCompensation")
+
+  recordedById String?
+  /// Set only when status reaches SUCCEEDED; null while PENDING/PROCESSING.
+  settledAt    DateTime?
+  paidAt       DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  /// Duplicate-payment prevention (§17.5).
+  @@unique([organizationId, provider, providerTransactionRef])
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, bookingId, paidAt])
+  @@index([organizationId, status])
+  /// Reconciliation sweep for stale PENDING/PROCESSING rows (§17.6).
+  @@index([organizationId, status, createdAt])
+  @@index([reversalOfPaymentId])
+}
+
+// ======================================================================
+// 9. CHANNEL PARTNERS & ATTRIBUTION
+// ======================================================================
+
+model ChannelPartner {
+  id              String   @id @default(cuid())
+  organizationId  String
+  firmName        String
+  contactPerson   String
+  phone           String
+  normalizedPhone String
+  email           String?
+  reraNumber      String?
+  tier            String   @default("SILVER") // SILVER | GOLD | PLATINUM
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  attributions      LeadAttribution[]
+  commissionPayouts CommissionPayout[]
+
+  @@unique([organizationId, normalizedPhone])
+  @@index([organizationId, isActive])
+}
+
+/// Enforces the attribution (non-poaching) window as data, not prose (§18.1).
+///
+/// REQUIRES RAW SQL MIGRATION:
+///   CREATE UNIQUE INDEX attribution_one_active_per_customer
+///     ON "LeadAttribution" ("organizationId", "customerId") WHERE status = 'ACTIVE';
+model LeadAttribution {
+  id               String         @id @default(cuid())
+  organizationId   String
+  customerId       String
+  customer         Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  leadId           String?
+  lead             Lead?          @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  channelPartnerId String
+  channelPartner   ChannelPartner @relation(fields: [channelPartnerId], references: [id], onDelete: Restrict)
+
+  status       AttributionStatus @default(ACTIVE)
+  source       String            @default("CP_REGISTRATION")
+  attributedAt DateTime          @default(now())
+  expiresAt    DateTime
+  endedAt      DateTime?
+
+  createdAt DateTime @default(now())
+
+  history AttributionHistory[]
+
+  @@index([organizationId, channelPartnerId, status])
+  @@index([status, expiresAt])
+}
+
+model AttributionHistory {
+  id             String             @id @default(cuid())
+  organizationId String
+  attributionId  String
+  attribution    LeadAttribution    @relation(fields: [attributionId], references: [id], onDelete: Cascade)
+  fromStatus     AttributionStatus?
+  toStatus       AttributionStatus
+  fromPartnerId  String?
+  toPartnerId    String?
+  actorId        String?
+  reason         String?
+  createdAt      DateTime           @default(now())
+
+  @@index([organizationId, attributionId, createdAt])
+}
+
+model CommissionRule {
+  id               String    @id @default(cuid())
+  organizationId   String
+  version          Int
+  baseRatePercent  Decimal   @db.Decimal(5, 2)
+  acceleratorRules Json // e.g. +0.5% at >= 3 deals
+  tierModifiers    Json
+  effectiveFrom    DateTime
+  effectiveTo      DateTime?
+  createdAt        DateTime  @default(now())
+
+  payouts CommissionPayout[]
+
+  @@unique([organizationId, version])
+}
+
+model CommissionPayout {
+  id               String         @id @default(cuid())
+  organizationId   String
+  channelPartnerId String
+  channelPartner   ChannelPartner @relation(fields: [channelPartnerId], references: [id], onDelete: Restrict)
+  bookingId        String
+  booking          Booking        @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  commissionRuleId String
+  commissionRule   CommissionRule @relation(fields: [commissionRuleId], references: [id], onDelete: Restrict)
+
+  amount       Decimal      @db.Decimal(14, 2)
+  status       PayoutStatus @default(PENDING)
+  approvedById String?
+  approvedAt   DateTime?
+  paidAt       DateTime?
+  createdAt    DateTime     @default(now())
+
+  @@unique([organizationId, bookingId, channelPartnerId])
+  @@index([organizationId, status])
+}
+
+// ======================================================================
+// 10. ACTIVITY, AUDIT & INFRASTRUCTURE
+// ======================================================================
+
+/// Human-readable business feed. NOT a replacement for AuditLog (§32.1).
+model ActivityTimeline {
+  id             String             @id @default(cuid())
+  organizationId String
+  leadId         String
+  lead           Lead               @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId         String?
+  actionType     ActivityActionType
+  title          String
+  detail         String
+  metadata       Json?
+  createdAt      DateTime           @default(now())
+
+  @@index([organizationId, leadId, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+/// IMMUTABLE security & compliance record (§32.4).
+/// The application DB role holds INSERT/SELECT only — no UPDATE/DELETE.
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  actorId       String
+  actorType     String  @default("USER") // USER | SYSTEM | AUTOMATION
+  sessionId     String?
+  requestId     String?
+  correlationId String?
+
+  action     String // lead.stage_changed, payment.refunded, role.permissions_changed
+  entityType String
+  entityId   String
+  oldValue   Json?
+  newValue   Json?
+  reason     String?
+  source     ChangeSource @default(MANUAL)
+
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, entityType, entityId])
+  @@index([organizationId, actorId, createdAt])
+  @@index([organizationId, action, createdAt])
+}
+
+/// Provider-scoped idempotency (§21.1).
+model WebhookEvent {
+  id              String          @id @default(cuid())
+  organizationId  String? // null until the organization is resolved
+  provider        WebhookProvider
+  providerEventId String
+  eventType       String
+
+  status       WebhookStatus @default(RECEIVED)
+  attemptCount Int           @default(0)
+  lastError    String?
+
+  payloadReference    String // object storage ref — large payloads not inlined
+  signatureVerifiedAt DateTime?
+  correlationId       String?
+
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  /// THE idempotency guarantee — scoped per provider, not globally.
+  @@unique([provider, providerEventId])
+  @@index([provider, status])
+  @@index([organizationId, receivedAt])
+}
+
+/// Transactional outbox (§23). Written in the SAME transaction as the
+/// domain mutation; published afterwards. Guarantees at-least-once delivery.
+model OutboxEvent {
+  id             String @id @default(cuid())
+  organizationId String
+
+  /// Drawn from the closed DomainEventType registry (§22.1). Stored as a
+  /// string for forward compatibility with additive event versions, but a
+  /// value outside the registry is rejected at the application boundary —
+  /// consumers must never receive an event type nobody declared.
+  eventType     DomainEventType
+  eventVersion  Int             @default(1)
+  aggregateType String
+  aggregateId   String
+  payload       Json
+
+  status       OutboxStatus @default(PENDING)
+  attemptCount Int          @default(0)
+  lastError    String?
+
+  correlationId String?
+  causationId   String?
+
+  createdAt   DateTime  @default(now())
+  availableAt DateTime  @default(now()) // backoff scheduling
+  publishedAt DateTime?
+
+  /// Publisher claim pattern: ORDER BY createdAt, FOR UPDATE SKIP LOCKED.
+  @@index([status, availableAt, createdAt])
+  @@index([organizationId, aggregateType, aggregateId])
+}
+
+model Notification {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  title          String
+  message        String
+  type           String   @default("INFO")
+  read           Boolean  @default(false)
+  linkUrl        String?
+  dedupeKey      String? // prevents duplicate alerts from replayed events
+  createdAt      DateTime @default(now())
+
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId, userId, read])
+}

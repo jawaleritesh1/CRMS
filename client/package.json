@@ -1,0 +1,25 @@
+{
+  "name": "ralix-crm-client",
+  "version": "5.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next start -H 0.0.0.0 -p 3005",
+    "dev:watch": "next dev -H 0.0.0.0 -p 3005",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0 -p 3005",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "lucide-react": "^0.475.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.3"
+  }
+}
